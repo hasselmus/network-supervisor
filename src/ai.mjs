@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { summariseCellularSamples } from './mr600.mjs';
 
 const INSTRUCTION = `Diagnose this small home network from the supplied evidence.
 Prefer physical managed-switch carrier and negotiated-speed evidence over reachability.
@@ -6,10 +7,12 @@ Treat Wi-Fi witness Raspberry Pis as unreliable corroborating witnesses: a missi
 Distinguish the most likely root cause from downstream symptoms and coincidences.
 Take account of the observer having independent Ethernet and Wi-Fi paths.
 Do not assume that a router or access point is healthy merely because its management interface answers.
+For cellular faults, distinguish local LAN/router failures, LTE registration loss, degraded RF (RSRP/RSRQ/SNR), local traffic/queueing, and operator/mobile-path congestion. Good RF does not prove the cellular path is uncongested; poor Internet performance with stable plausible RF and low local traffic supports a cellular/operator-path diagnosis rather than a Wi-Fi/LAN diagnosis.
 
 Default to a SHORT operational answer, normally 2–4 sentences. If one cause is strongly indicated, state the best diagnosis, confidence, and least disruptive next action; mention only the one or two observations that materially establish it. Do not recite the complete evidence chain, provide separate evidence-for/evidence-against sections, or discuss already-excluded alternatives unless the evidence is genuinely ambiguous. If the evidence is ambiguous, briefly give the leading alternatives and the single most useful discriminating check.`;
 
 export function buildAIEvidence({ config, current, storage, problem }) {
+  const recentCellular = typeof storage.recentCellularSamples === 'function' ? storage.recentCellularSamples(20) : [];
   return {
     humanObservation: String(problem || '').trim(),
     site: {
@@ -18,12 +21,15 @@ export function buildAIEvidence({ config, current, storage, problem }) {
         switches: config.switches,
         links: config.links,
         nodes: config.nodes,
-        witnesses: config.witnesses
-      }
+        witnesses: config.witnesses,
+        cellularRouter: config.cellularRouter,
+      },
     },
     current,
+    recentCellularSummary: summariseCellularSamples(recentCellular),
+    recentCellularSamples: recentCellular.slice(0, 8),
     recentEvents: storage.recentEvents(40),
-    recentHumanObservations: storage.recentObservations(10)
+    recentHumanObservations: storage.recentObservations(10),
   };
 }
 
@@ -51,16 +57,16 @@ async function diagnoseOpenAI(evidence) {
     model,
     instructions: INSTRUCTION,
     input: `Network-supervisor evidence follows as JSON.\n\n${JSON.stringify(evidence)}`,
-    reasoning: { effort }
+    reasoning: { effort },
   };
   const response = await fetch(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${key}`
+      authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(request),
-    signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS || 60000))
+    signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS || 60000)),
   });
   const body = await response.text();
   if (!response.ok) throw new Error(`OpenAI API HTTP ${response.status}: ${body.slice(0, 500)}`);
@@ -79,7 +85,7 @@ async function diagnoseGeneric(evidence) {
     method: 'POST',
     headers,
     body: JSON.stringify({ instruction: INSTRUCTION, ...evidence }),
-    signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS || 60000))
+    signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS || 60000)),
   });
   const body = await response.text();
   if (!response.ok) throw new Error(`AI endpoint HTTP ${response.status}: ${body.slice(0, 500)}`);
