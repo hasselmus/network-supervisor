@@ -45,8 +45,20 @@ export function validateConfig(c) {
     ids.add(sw.id);
     for (const [p, spec] of Object.entries(sw.ports || {})) {
       if (!/^\d+$/.test(p)) errors.push(`${sw.id}: invalid port number ${p}`);
-      if (spec.expectedLink && !['10M Half','10M Full','100M Full','1000M Full'].includes(spec.expectedLink)) errors.push(`${sw.id} port ${p}: unsupported expectedLink ${spec.expectedLink}`);
+      if (spec.expectedLink && !['10M Half', '10M Full', '100M Full', '1000M Full'].includes(spec.expectedLink)) {
+        errors.push(`${sw.id} port ${p}: unsupported expectedLink ${spec.expectedLink}`);
+      }
     }
   }
+
+  if (c?.cellularRouter?.enabled) {
+    if (!(c.cellularRouter.host || c.observer?.router)) errors.push('cellularRouter.host or observer.router is required');
+    for (const key of ['weakRsrpDbm', 'poorRsrqDb', 'poorSnrDb', 'wanLatencyWarnMs']) {
+      if (c.cellularRouter[key] != null && !Number.isFinite(Number(c.cellularRouter[key]))) {
+        errors.push(`cellularRouter.${key} must be numeric`);
+      }
+    }
+  }
+
   if (errors.length) throw new Error(`Invalid site configuration:\n- ${errors.join('\n- ')}`);
 }
