@@ -2,29 +2,31 @@
 
 A small topology-aware network fault supervisor for fixed home networks.
 
-This is deliberately **not** a bandwidth/NMS dashboard. Its job is to answer: **what physical link, branch or network service is probably broken?** It uses hard evidence from lightly managed Ethernet switches, then functional probes, then fallible Wi-Fi witnesses. Downstream symptoms are suppressed where a stronger upstream explanation exists.
+This is deliberately **not** a bandwidth/NMS dashboard. Its job is to answer: **what physical link, branch or network service is probably broken?** It uses hard evidence from lightly managed Ethernet switches, then functional probes, cellular-router telemetry, then fallible Wi-Fi witnesses. Downstream symptoms are suppressed where a stronger upstream explanation exists.
 
-The TP-Link Easy Smart support is informed by Peter Smode's GPL-3.0 `essstat` utility and is therefore kept under GPL-3.0-only as well.
+The TP-Link Easy Smart support is informed by Peter Smode's GPL-3.0 `essstat` utility and is therefore kept under GPL-3.0-only as well. Optional TP-Link Archer MR-series telemetry uses the GPL `tplinkrouterc6u` package.
 
-## What v0.1 monitors
+## What v0.2 monitors
 
 - TP-Link Easy Smart switch management over local HTTP.
 - Per-port carrier state and negotiated speed/duplex.
 - **Change** in bad-packet counters (not merely non-zero lifetime counters).
 - Router reachability through the supervisor Pi's Ethernet and Wi-Fi interfaces separately.
-- External-IP reachability through both interfaces.
+- External-IP reachability and actual ICMP RTT through both interfaces.
 - DNS queries sent directly to the router DNS proxy.
+- Optional TP-Link Archer MR-series LTE telemetry: registration/network type, SIM status, RSRP, RSRQ, SNR, current WAN rates and ISP; band/EARFCN/PCI/CID are collected when the firmware exposes them.
 - Optional Raspberry Pi Zero 2 W Wi-Fi witnesses: BSSID, RSSI, boot ID, uptime and simple reachability.
 - Human observations entered from the LAN web interface.
 - Optional AI diagnosis, including direct OpenAI Responses API support. The offline deterministic monitor does not depend on it.
 
-The dashboard has no traffic graphs and stores events/observations rather than long-term packet-volume telemetry.
+The dashboard has no traffic graphs. It stores state changes plus a small rolling cellular sample history for fault correlation and AI diagnosis.
 
 ## Requirements
 
 - Linux, intended for Raspberry Pi OS / Debian.
 - Node.js >= 22.13.
 - Python 3 with the `requests` module (`sudo apt install python3-requests` on Debian/Raspberry Pi OS).
+- `python3-venv` if MR-series cellular telemetry is enabled.
 - `ping` and `iw` installed.
 - `/mnt/ssd` mounted by default for persistent state.
 - TP-Link Easy Smart switches compatible with the classic `logon.cgi` / `PortStatisticsRpm.htm` interface.
@@ -41,7 +43,7 @@ cp site.example.json site.local.json
 cp .env.example .env
 ```
 
-Edit `site.local.json` for the physical site and put the switch credentials in `.env`. Both files are ignored by git.
+Edit `site.local.json` for the physical site and put credentials in `.env`. Both files are ignored by git.
 
 Validate before installing:
 
@@ -58,6 +60,8 @@ When satisfied:
 ```sh
 sudo sh scripts/install-systemd.sh
 ```
+
+The installer creates `.venv` and installs the pinned `tplinkrouterc6u` dependency used by the optional MR-series telemetry adapter without modifying Debian's system Python.
 
 ## Site configuration principles
 
@@ -79,7 +83,44 @@ Example:
 
 ### Bad-packet counters
 
-Small cumulative Rx/Tx bad-packet counts are common enough on some consumer equipment that v0.1 does **not** flag a non-zero total. It records a fault only when the counter increases by at least `badPacketDeltaWarn` between polls (default 100). This is intentionally conservative and can be tuned per port.
+Small cumulative Rx/Tx bad-packet counts are common enough on some consumer equipment that the supervisor does **not** flag a non-zero total. It records a fault only when the counter increases by at least `badPacketDeltaWarn` between polls (default 100). This is intentionally conservative and can be tuned per port.
+
+## Archer MR-series cellular telemetry
+
+The cellular adapter is read-only. It uses the router's local encrypted management API through `tplinkrouterc6u`; Archer MR600 v1/v2/v3 are listed as supported by that upstream project. Enable it in `site.local.json`:
+
+```json
+"cellularRouter": {
+  "enabled": true,
+  "host": "192.168.1.1",
+  "weakRsrpDbm": -110,
+  "poorRsrqDb": -16,
+  "poorSnrDb": 2,
+  "wanLatencyWarnMs": 250
+}
+```
+
+and add the router's **Local Password** to `.env`:
+
+```sh
+TPLINK_ROUTER_USER=admin
+TPLINK_ROUTER_PASSWORD=your-local-router-password
+```
+
+The first poll auto-detects the MR crypto/client variant and the running Node process reuses that choice on later polls. The adapter reads LTE status, RSRP/RSRQ/SNR, ISP and current Rx/Tx rates. It also makes a best-effort read of `LTE_NET_STATUS` fields used by MR600 status pages for band, EARFCN, PCI and CID; missing fields are simply left blank.
+
+The deterministic diagnosis uses cellular telemetry conservatively:
+
+- modem unregistered + LAN reachable → cellular registration failure;
+- external IP path down while LTE remains registered → fault is localised beyond the LAN/router switching path;
+- poor RSRP/RSRQ/SNR → radio degradation;
+- sustained high RTT to all external targets with plausible RF and low local traffic → cellular/operator-path congestion or upstream mobile-network trouble becomes more likely.
+
+The latter is intentionally not labelled as proven base-station congestion: the router cannot observe scheduler load, mobile-core congestion or carrier backhaul directly.
+
+The database retains seven days of lightweight cellular samples for correlation. The normal dashboard shows only current state; there are no automatic throughput tests or radio graphs.
+
+TP-Link local administration has firmware-dependent single-session behaviour. The adapter tolerates telemetry failures and does not classify a temporary management-login failure as a network outage. If interactive browser administration and monitoring conflict on a particular firmware build, increase the normal poll interval or temporarily stop the service.
 
 ## Wi-Fi witnesses
 
@@ -95,7 +136,7 @@ The service exposes `GET /status` on port 8791. The Wi-Fi default gateway is dis
 
 ## AI diagnosis
 
-The web interface can send the current topology, hard switch evidence, functional probes, active diagnoses, recent events and an optional human-entered problem description to an AI. This is always an explicit human action: ordinary polling and deterministic diagnosis remain completely local and work without Internet access.
+The web interface can send the current topology, hard switch evidence, functional probes, cellular telemetry, active diagnoses, recent events and an optional human-entered problem description to an AI. This is always an explicit human action: ordinary polling and deterministic diagnosis remain completely local and work without Internet access.
 
 ### OpenAI
 
@@ -126,7 +167,7 @@ The generic endpoint receives JSON and may return plain text or JSON containing 
 
 ## Reboots / remediation
 
-v0.1 diagnoses but does **not** reboot equipment automatically. TP-Link Deco and Archer local management APIs are firmware-dependent and largely undocumented. The intended next step is to add explicit, site-tested soft-reboot adapters for the router and Decos, exposed as suggested/manual actions first. Automatic remediation, if added later, should require high-confidence diagnoses, cooldowns and attempt limits.
+The supervisor diagnoses but does **not** reboot equipment automatically. TP-Link Deco and Archer local management APIs are firmware-dependent and largely undocumented. The intended next step is to add explicit, site-tested soft-reboot adapters for the router and Decos, exposed as suggested/manual actions first. Automatic remediation, if added later, should require high-confidence diagnoses, cooldowns and attempt limits.
 
 ## Security
 
