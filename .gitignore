@@ -1,0 +1,7 @@
+.env
+site.local.json
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+node_modules/
+.DS_Store
