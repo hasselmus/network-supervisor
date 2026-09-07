@@ -9,6 +9,18 @@ if [ "$(id -u)" -ne 0 ]; then echo "Run as root: sudo sh scripts/install-systemd
 python3 -c 'import requests' >/dev/null 2>&1 || { echo "Python requests module is required (Debian/Raspberry Pi OS: sudo apt install python3-requests)" >&2; exit 1; }
 mountpoint -q /mnt/ssd || { echo "/mnt/ssd is not mounted; refusing to start" >&2; exit 1; }
 
+# The optional MR600 adapter uses tplinkrouterc6u and its crypto dependencies in
+# an isolated venv so Debian's externally-managed system Python remains untouched.
+if [ -f "$REPO/requirements-router.txt" ]; then
+  if [ ! -x "$REPO/.venv/bin/python" ]; then
+    python3 -m venv "$REPO/.venv" 2>/dev/null || {
+      echo "python3-venv is required for MR600 telemetry (sudo apt install python3-venv)" >&2
+      exit 1
+    }
+  fi
+  "$REPO/.venv/bin/python" -m pip install --disable-pip-version-check -q -r "$REPO/requirements-router.txt"
+fi
+
 # Stop any previously installed instance before checking the dashboard port. This
 # catches the common transition from an interactive `npm start` test process to
 # the permanent service without leaving systemd in an EADDRINUSE restart loop.
