@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { parsePortStatistics, pollEasySmart } from '../src/tplink-easy-smart.mjs';
+import { parsePortStatistics, pollEasySmartNode } from '../src/tplink-easy-smart.mjs';
 
 const FOUR_PORT_STATS = `
 <script>
@@ -40,7 +40,7 @@ test('parses five-port statistics and preserves non-zero lifetime bad counters',
   assert.equal(p[2].rxBad, 245);
 });
 
-test('pollEasySmart retains cookies set during login redirect chain', async t => {
+test('pure-Node Easy Smart backend retains cookies set during login redirect chain', async t => {
   const server = http.createServer((req, res) => {
     if (req.url === '/logon.cgi' && req.method === 'POST') {
       res.writeHead(302, { location: '/index.htm', 'set-cookie': 'stage=one; Path=/' });
@@ -68,7 +68,7 @@ test('pollEasySmart retains cookies set during login redirect chain', async t =>
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
   const { port } = server.address();
-  const ports = await pollEasySmart({ host: `127.0.0.1:${port}`, username: 'admin', password: 'test' });
+  const ports = await pollEasySmartNode({ host: `127.0.0.1:${port}`, username: 'admin', password: 'test' });
   assert.equal(ports.length, 4);
   assert.equal(ports[0].link, '1000M Full');
   assert.equal(ports[1].link, '100M Full');
