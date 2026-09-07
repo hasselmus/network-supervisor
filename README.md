@@ -4,7 +4,7 @@ A small topology-aware network fault supervisor for fixed home networks.
 
 This is deliberately **not** a bandwidth/NMS dashboard. Its job is to answer: **what physical link, branch or network service is probably broken?** It uses hard evidence from lightly managed Ethernet switches, then functional probes, then fallible Wi-Fi witnesses. Downstream symptoms are suppressed where a stronger upstream explanation exists.
 
-The initial TP-Link Easy Smart HTTP implementation is informed by Peter Smode's GPL-3.0 `essstat` utility and is therefore kept under GPL-3.0-only as well.
+The TP-Link Easy Smart support is informed by Peter Smode's GPL-3.0 `essstat` utility and is therefore kept under GPL-3.0-only as well.
 
 ## What v0.1 monitors
 
@@ -24,9 +24,12 @@ The dashboard has no traffic graphs and stores events/observations rather than l
 
 - Linux, intended for Raspberry Pi OS / Debian.
 - Node.js >= 22.13.
+- Python 3 with the `requests` module (`sudo apt install python3-requests` on Debian/Raspberry Pi OS).
 - `ping` and `iw` installed.
 - `/mnt/ssd` mounted by default for persistent state.
 - TP-Link Easy Smart switches compatible with the classic `logon.cgi` / `PortStatisticsRpm.htm` interface.
+
+The default Easy Smart poller deliberately uses a tiny Python `requests.Session()` helper because this matches the behaviour of `essstat` on real Easy Smart firmware. A pure-Node implementation remains available for development by setting `TPLINK_EASYSMART_BACKEND=node`, but is not the default.
 
 ## Install on the supervisor Pi
 
