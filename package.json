@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.13.0" },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "start": "node src/index.mjs",
     "check-config": "node src/index.mjs --check-config",
-    "test": "node --test"
+    "test": "node --test",
+    "service-install": "sudo sh scripts/install-systemd.sh",
+    "witness-install": "sudo sh scripts/install-witness.sh"
   }
 }
