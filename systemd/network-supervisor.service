@@ -9,10 +9,11 @@ Type=simple
 User=pi
 Group=pi
 WorkingDirectory=/home/pi/network-supervisor
-ExecStart=/usr/bin/node /home/pi/network-supervisor/src/index.mjs
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/env node /home/pi/network-supervisor/src/index.mjs
 Restart=on-failure
 RestartSec=5
-Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
