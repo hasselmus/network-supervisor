@@ -14,5 +14,5 @@ jobs:
           node-version: '22'
       - name: Node tests
         run: npm test
-      - name: Python witness syntax
-        run: python3 -m py_compile witness/agent.py
+      - name: Python syntax
+        run: python3 -m py_compile witness/agent.py src/easysmart_probe.py
