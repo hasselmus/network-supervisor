@@ -1,0 +1,49 @@
+{
+  "name": "Example home network",
+  "pollIntervalSeconds": 30,
+  "debounce": { "failures": 3, "recoveries": 2 },
+  "badPacketDeltaWarn": 100,
+  "observer": {
+    "router": "192.168.1.1",
+    "dnsServer": "192.168.1.1",
+    "ethernetInterface": "eth0",
+    "wifiInterface": "wlan0",
+    "internetTargets": ["1.1.1.1", "8.8.8.8"]
+  },
+  "switches": [
+    {
+      "id": "main",
+      "name": "Main switch",
+      "host": "192.168.1.2",
+      "ports": {
+        "1": { "name": "Router", "expectedUp": true, "expectedLink": "1000M Full" },
+        "2": { "name": "Room uplink", "expectedUp": true, "expectedLink": "1000M Full" },
+        "3": { "name": "NAS", "expectedUp": true, "expectedLink": "1000M Full" },
+        "4": { "name": "Optional desk socket", "expectedUp": false, "expectedLink": "1000M Full" },
+        "5": { "name": "IoT gateway", "expectedUp": true, "expectedLink": "100M Full" }
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": "main-router",
+      "name": "Main switch ↔ router",
+      "a": { "switch": "main", "port": 1 },
+      "b": { "node": "router" },
+      "expectedUp": true
+    }
+  ],
+  "nodes": [
+    { "id": "router", "name": "Router", "kind": "router", "host": "192.168.1.1" },
+    { "id": "nas", "name": "NAS", "kind": "host", "host": "192.168.1.20", "probe": "ping" }
+  ],
+  "witnesses": [
+    {
+      "id": "room-pi",
+      "name": "Room Wi-Fi witness",
+      "url": "http://192.168.1.30:8791/status",
+      "unreliable": true,
+      "expectedClosestAp": "Room AP"
+    }
+  ]
+}
