@@ -46,3 +46,13 @@ test('bad packet totals are ignored until the per-poll delta reaches threshold',
   d = diagnose(config,{switches:{a,b:sw()},interfaces:{},witnesses:{}});
   assert.ok(d.some(x=>x.id==='port:a:1:errors'));
 });
+
+test('missing unreliable Wi-Fi witness is not itself a network diagnosis', () => {
+  const d = diagnose(config, {
+    switches:{a:sw(),b:sw()},
+    interfaces:{},
+    witnesses:{pooh:{ok:false,name:'pooh.local',unreliable:true}}
+  });
+  assert.ok(!d.some(x=>x.category==='witness'));
+  assert.ok(!d.some(x=>x.id==='witness:pooh'));
+});
