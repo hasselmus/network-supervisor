@@ -1,0 +1,12 @@
+{
+  "name": "network-supervisor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "check-config": "node src/index.mjs --check-config",
+    "test": "node --test"
+  }
+}
