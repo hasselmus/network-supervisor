@@ -3,8 +3,8 @@
 
 Uses tplinkrouterc6u for the router's encrypted local management protocol.
 Credentials are read from environment variables so they never appear in argv.
-The first invocation may auto-detect the MR crypto variant; callers can cache
-and pass the returned client class on later invocations.
+The first invocation may auto-detect the MR crypto/protocol variant; callers can
+cache and pass the returned client class on later invocations.
 """
 
 from __future__ import annotations
@@ -16,14 +16,33 @@ import sys
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from tplinkrouterc6u import TPLinkMRClient, TPLinkMRClientGCM, TPLinkMR600Client
+from tplinkrouterc6u import (
+    TPLinkMRClient,
+    TPLinkMRClientGCM,
+    TPLinkMR200Client,
+    TPLinkMR6400v7Client,
+    TPLinkMR600Client,
+)
 
+# tplinkrouterc6u lists Archer MR600 v1/v2/v3 as supported, but those hardware
+# generations do not necessarily use the class named TPLinkMR600Client.  The
+# upstream provider probes several MR-family transports in this order.  We keep
+# the search restricted to MR-family clients and, importantly, require a full
+# authorize + get_lte_status transaction before accepting a candidate.
 CLIENTS = {
     "TPLinkMRClientGCM": TPLinkMRClientGCM,
     "TPLinkMRClient": TPLinkMRClient,
+    "TPLinkMR200Client": TPLinkMR200Client,
+    "TPLinkMR6400v7Client": TPLinkMR6400v7Client,
     "TPLinkMR600Client": TPLinkMR600Client,
 }
-AUTO_ORDER = ["TPLinkMRClientGCM", "TPLinkMRClient", "TPLinkMR600Client"]
+AUTO_ORDER = [
+    "TPLinkMRClientGCM",
+    "TPLinkMRClient",
+    "TPLinkMR200Client",
+    "TPLinkMR6400v7Client",
+    "TPLinkMR600Client",
+]
 
 EXTRA_KEYS = {
     "rfInfoBand",
@@ -90,23 +109,6 @@ def read_raw_radio_extras(router: Any) -> dict[str, Any]:
         return {}
 
 
-def choose_client(host: str, password: str, username: str, timeout: int, requested: str):
-    names = AUTO_ORDER if requested == "auto" else [requested]
-    errors = []
-    for name in names:
-        cls = CLIENTS.get(name)
-        if cls is None:
-            raise RuntimeError(f"unknown MR client {name}")
-        router = cls(host, password, username, timeout=timeout)
-        try:
-            if router.supports():
-                return router, name
-            errors.append(f"{name}: protocol not supported")
-        except Exception as exc:
-            errors.append(f"{name}: {exc}")
-    raise RuntimeError("no supported MR600 local protocol found (" + "; ".join(errors) + ")")
-
-
 def friendly_status(status: Any, extras: dict[str, Any]) -> dict[str, Any]:
     raw = to_plain(status)
     # tplinkrouterc6u exposes MR rfInfoSnr in tenths of a dB. The MR600 web UI
@@ -152,21 +154,57 @@ def friendly_status(status: Any, extras: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def poll(host: str, username: str, password: str, timeout: int, client_name: str) -> dict[str, Any]:
-    router, selected = choose_client(host, password, username, timeout, client_name)
+def _dispose(router: Any) -> None:
     try:
+        router.logout()
+    except Exception:
+        pass
+    try:
+        router.req.close()
+    except Exception:
+        pass
+
+
+def try_client(cls: type, name: str, host: str, password: str, username: str, timeout: int):
+    """Return (router, status) only after a complete LTE read succeeds.
+
+    `supports()` alone is insufficient because several MR generations share
+    enough of the login surface for the wrong client class to look plausible.
+    """
+    router = cls(host, password, username, timeout=timeout)
+    try:
+        if not router.supports():
+            raise RuntimeError("protocol not supported")
         router.authorize()
         status = router.get_lte_status()
-        extras = read_raw_radio_extras(router)
-        return {
-            "client": selected,
-            "telemetry": friendly_status(status, extras),
-        }
-    finally:
+        return router, status
+    except Exception:
+        _dispose(router)
+        raise
+
+
+def poll(host: str, username: str, password: str, timeout: int, client_name: str) -> dict[str, Any]:
+    names = AUTO_ORDER if client_name == "auto" else [client_name]
+    errors = []
+    for name in names:
+        cls = CLIENTS.get(name)
+        if cls is None:
+            raise RuntimeError(f"unknown MR client {name}")
         try:
-            router.logout()
-        except Exception:
-            pass
+            router, status = try_client(cls, name, host, password, username, timeout)
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+            continue
+        try:
+            extras = read_raw_radio_extras(router)
+            return {
+                "client": name,
+                "telemetry": friendly_status(status, extras),
+            }
+        finally:
+            _dispose(router)
+
+    raise RuntimeError("no supported MR600 local protocol found (" + "; ".join(errors) + ")")
 
 
 def main() -> None:
