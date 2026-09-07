@@ -1,0 +1,17 @@
+[Unit]
+Description=Network supervisor Wi-Fi witness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/network-supervisor
+EnvironmentFile=-/etc/default/network-supervisor-witness
+ExecStart=/usr/bin/python3 /home/pi/network-supervisor/witness/agent.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
