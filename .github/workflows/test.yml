@@ -12,7 +12,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Node tests
         run: npm test
-      - name: Python syntax
-        run: python3 -m py_compile witness/agent.py src/easysmart_probe.py
+      - name: Python dependencies
+        run: pip install -r requirements-router.txt
+      - name: Python helper syntax
+        run: python3 -m py_compile witness/agent.py src/easysmart_probe.py src/mr600_probe.py
