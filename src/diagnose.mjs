@@ -1,12 +1,218 @@
-function sevRank(s){return({critical:3,warning:2,info:1})[s]||0}
+function sevRank(s) {
+  return ({ critical: 3, warning: 2, info: 1 })[s] || 0;
+}
 
-export function computeCounterDeltas(currentSwitches,previousCounters=new Map()){for(const[switchId,sw]of Object.entries(currentSwitches)){if(!sw.ok)continue;for(const p of sw.ports){const key=`${switchId}:${p.port}`,now={txBad:p.txBad,rxBad:p.rxBad},prev=previousCounters.get(key),delta=(a,b)=>a>=b?a-b:0;p.badDelta=prev?delta(p.txBad,prev.txBad)+delta(p.rxBad,prev.rxBad):0;previousCounters.set(key,now)}}return previousCounters}
+export function computeCounterDeltas(currentSwitches, previousCounters = new Map()) {
+  for (const [switchId, sw] of Object.entries(currentSwitches)) {
+    if (!sw.ok) continue;
+    for (const p of sw.ports) {
+      const key = `${switchId}:${p.port}`;
+      const now = { txBad: p.txBad, rxBad: p.rxBad };
+      const prev = previousCounters.get(key);
+      const delta = (a, b) => a >= b ? a - b : 0;
+      p.badDelta = prev ? delta(p.txBad, prev.txBad) + delta(p.rxBad, prev.rxBad) : 0;
+      previousCounters.set(key, now);
+    }
+  }
+  return previousCounters;
+}
 
-export function diagnose(config,obs){const out=[],linkedPorts=new Set(),failedLinks=new Set();
-for(const link of config.links||[]){if(link.expectedUp===false)continue;const endpointStates=[link.a,link.b].map(ep=>{if(!ep?.switch||!ep?.port)return null;linkedPorts.add(`${ep.switch}:${ep.port}`);const sw=obs.switches[ep.switch];return sw?.ok?sw.ports.find(p=>p.port===Number(ep.port))||null:null}).filter(Boolean);if(endpointStates.some(p=>!p.up)){failedLinks.add(link.id);out.push({id:`link:${link.id}`,severity:'critical',category:'physical',title:`${link.name}: Ethernet link down`,detail:'Managed-switch carrier evidence shows that this expected physical link is down.',evidence:endpointStates.map(p=>`port ${p.port}: ${p.link}`)})}}
-for(const swSpec of config.switches||[]){const sw=obs.switches[swSpec.id];if(!sw?.ok){const explained=(config.links||[]).some(link=>[link.a,link.b].some(ep=>ep?.switch===swSpec.id)&&failedLinks.has(link.id));if(!explained)out.push({id:`switch:${swSpec.id}:management`,severity:'warning',category:'management',title:`${swSpec.name}: management interface unavailable`,detail:sw?.error||'HTTP polling failed.'});continue}for(const[portNo,pSpec]of Object.entries(swSpec.ports||{})){const p=sw.ports.find(x=>x.port===Number(portNo));if(!p){out.push({id:`switch:${swSpec.id}:port:${portNo}:missing`,severity:'warning',category:'monitor',title:`${swSpec.name} port ${portNo}: not reported by switch`,detail:'The configured port is absent from the switch statistics response.'});continue}const key=`${swSpec.id}:${portNo}`;if(pSpec.expectedUp!==false&&!p.up&&!linkedPorts.has(key))out.push({id:`port:${key}:down`,severity:'critical',category:'physical',title:`${swSpec.name} port ${portNo} (${pSpec.name||'unnamed'}): link down`,detail:'This port is configured as normally up.'});if(p.up&&pSpec.expectedLink&&p.link!==pSpec.expectedLink)out.push({id:`port:${key}:negotiation`,severity:'warning',category:'physical',title:`${swSpec.name} port ${portNo} (${pSpec.name||'unnamed'}): ${p.link}, expected ${pSpec.expectedLink}`,detail:'The link is up but auto-negotiated speed/duplex differs from the site expectation.'});const threshold=Number(pSpec.badPacketDeltaWarn??config.badPacketDeltaWarn??100);if(p.badDelta>=threshold)out.push({id:`port:${key}:errors`,severity:'warning',category:'physical',title:`${swSpec.name} port ${portNo} (${pSpec.name||'unnamed'}): bad-packet counter rising`,detail:`${p.badDelta} new bad packets since the previous poll (threshold ${threshold}). Cumulative non-zero counters are not faults.`})}}
-const usable=Object.values(obs.interfaces||{}).filter(x=>x&&x.configured!==false),routerOK=usable.some(x=>x.router?.ok),internetOK=usable.some(x=>(x.internet||[]).some(y=>y.ok)),dnsOK=usable.some(x=>x.dns?.ok);if(usable.length&&!routerOK&&failedLinks.size===0)out.push({id:'router:lan-unreachable',severity:'critical',category:'service',title:'Router LAN service unreachable',detail:'The router did not answer through any monitored interface and no managed-switch carrier fault currently explains it.'});if(routerOK&&!internetOK)out.push({id:'router:wan',severity:'critical',category:'service',title:'Probable 4G/WAN failure',detail:'The router is reachable on the LAN, but no configured external IP target is reachable.'});if(routerOK&&internetOK&&!dnsOK)out.push({id:'router:dns',severity:'warning',category:'service',title:'Router DNS proxy appears faulty',detail:'External IP connectivity works, but DNS queries sent directly to the router fail.'});
-const ethName=config.observer?.ethernetInterface,wifiName=config.observer?.wifiInterface,eth=ethName?obs.interfaces?.[ethName]:null,wifi=wifiName?obs.interfaces?.[wifiName]:null;if(eth?.router&&wifi?.router){if(!eth.router.ok&&wifi.router.ok&&failedLinks.size===0)out.push({id:'path:ethernet',severity:'warning',category:'service',title:'Ethernet path from supervisor is faulty',detail:`Router reachable via ${wifiName}, but not via ${ethName}.`});if(!wifi.router.ok&&eth.router.ok)out.push({id:'path:wifi',severity:'warning',category:'service',title:'Wi-Fi path from supervisor is faulty',detail:`Router reachable via ${ethName}, but not via ${wifiName}.`})}
-for(const[id,w]of Object.entries(obs.witnesses||{}))if(!w.ok)out.push({id:`witness:${id}`,severity:'info',category:'witness',title:`${w.name||id}: witness unavailable`,detail:'This is supporting evidence only; an unreliable witness disappearing is not classified as a network fault.'});return out.sort((a,b)=>sevRank(b.severity)-sevRank(a.severity)||a.title.localeCompare(b.title))}
+export function diagnose(config, obs) {
+  const out = [];
+  const linkedPorts = new Set();
+  const failedLinks = new Set();
 
-export class FaultLatch{constructor(failures=3,recoveries=2){this.failures=failures;this.recoveries=recoveries;this.states=new Map()}update(raw){const rawMap=new Map(raw.map(x=>[x.id,x])),keys=new Set([...this.states.keys(),...rawMap.keys()]),transitions=[];for(const key of keys){const rec=this.states.get(key)||{present:0,absent:0,active:false,item:null},item=rawMap.get(key);if(item){rec.present++;rec.absent=0;rec.item=item;if(!rec.active&&rec.present>=this.failures){rec.active=true;transitions.push({type:'started',item})}}else{rec.absent++;rec.present=0;if(rec.active&&rec.absent>=this.recoveries){rec.active=false;transitions.push({type:'cleared',item:rec.item})}if(!rec.active&&rec.absent>=this.recoveries){this.states.delete(key);continue}}this.states.set(key,rec)}return{active:[...this.states.values()].filter(x=>x.active).map(x=>x.item),transitions}}}
+  for (const link of config.links || []) {
+    if (link.expectedUp === false) continue;
+    const endpointStates = [link.a, link.b]
+      .map(ep => {
+        if (!ep?.switch || !ep?.port) return null;
+        linkedPorts.add(`${ep.switch}:${ep.port}`);
+        const sw = obs.switches[ep.switch];
+        return sw?.ok ? sw.ports.find(p => p.port === Number(ep.port)) || null : null;
+      })
+      .filter(Boolean);
+
+    if (endpointStates.some(p => !p.up)) {
+      failedLinks.add(link.id);
+      out.push({
+        id: `link:${link.id}`,
+        severity: 'critical',
+        category: 'physical',
+        title: `${link.name}: Ethernet link down`,
+        detail: 'Managed-switch carrier evidence shows that this expected physical link is down.',
+        evidence: endpointStates.map(p => `port ${p.port}: ${p.link}`)
+      });
+    }
+  }
+
+  for (const swSpec of config.switches || []) {
+    const sw = obs.switches[swSpec.id];
+    if (!sw?.ok) {
+      const explained = (config.links || []).some(link =>
+        [link.a, link.b].some(ep => ep?.switch === swSpec.id) && failedLinks.has(link.id));
+      if (!explained) {
+        out.push({
+          id: `switch:${swSpec.id}:management`,
+          severity: 'warning',
+          category: 'management',
+          title: `${swSpec.name}: management interface unavailable`,
+          detail: sw?.error || 'HTTP polling failed.'
+        });
+      }
+      continue;
+    }
+
+    for (const [portNo, pSpec] of Object.entries(swSpec.ports || {})) {
+      const p = sw.ports.find(x => x.port === Number(portNo));
+      if (!p) {
+        out.push({
+          id: `switch:${swSpec.id}:port:${portNo}:missing`,
+          severity: 'warning',
+          category: 'monitor',
+          title: `${swSpec.name} port ${portNo}: not reported by switch`,
+          detail: 'The configured port is absent from the switch statistics response.'
+        });
+        continue;
+      }
+
+      const key = `${swSpec.id}:${portNo}`;
+      if (pSpec.expectedUp !== false && !p.up && !linkedPorts.has(key)) {
+        out.push({
+          id: `port:${key}:down`,
+          severity: 'critical',
+          category: 'physical',
+          title: `${swSpec.name} port ${portNo} (${pSpec.name || 'unnamed'}): link down`,
+          detail: 'This port is configured as normally up.'
+        });
+      }
+      if (p.up && pSpec.expectedLink && p.link !== pSpec.expectedLink) {
+        out.push({
+          id: `port:${key}:negotiation`,
+          severity: 'warning',
+          category: 'physical',
+          title: `${swSpec.name} port ${portNo} (${pSpec.name || 'unnamed'}): ${p.link}, expected ${pSpec.expectedLink}`,
+          detail: 'The link is up but auto-negotiated speed/duplex differs from the site expectation.'
+        });
+      }
+      const threshold = Number(pSpec.badPacketDeltaWarn ?? config.badPacketDeltaWarn ?? 100);
+      if (p.badDelta >= threshold) {
+        out.push({
+          id: `port:${key}:errors`,
+          severity: 'warning',
+          category: 'physical',
+          title: `${swSpec.name} port ${portNo} (${pSpec.name || 'unnamed'}): bad-packet counter rising`,
+          detail: `${p.badDelta} new bad packets since the previous poll (threshold ${threshold}). Cumulative non-zero counters are not faults.`
+        });
+      }
+    }
+  }
+
+  const usable = Object.values(obs.interfaces || {}).filter(x => x && x.configured !== false);
+  const routerOK = usable.some(x => x.router?.ok);
+  const internetOK = usable.some(x => (x.internet || []).some(y => y.ok));
+  const dnsOK = usable.some(x => x.dns?.ok);
+
+  if (usable.length && !routerOK && failedLinks.size === 0) {
+    out.push({
+      id: 'router:lan-unreachable',
+      severity: 'critical',
+      category: 'service',
+      title: 'Router LAN service unreachable',
+      detail: 'The router did not answer through any monitored interface and no managed-switch carrier fault currently explains it.'
+    });
+  }
+  if (routerOK && !internetOK) {
+    out.push({
+      id: 'router:wan',
+      severity: 'critical',
+      category: 'service',
+      title: 'Probable 4G/WAN failure',
+      detail: 'The router is reachable on the LAN, but no configured external IP target is reachable.'
+    });
+  }
+  if (routerOK && internetOK && !dnsOK) {
+    out.push({
+      id: 'router:dns',
+      severity: 'warning',
+      category: 'service',
+      title: 'Router DNS proxy appears faulty',
+      detail: 'External IP connectivity works, but DNS queries sent directly to the router fail.'
+    });
+  }
+
+  const ethName = config.observer?.ethernetInterface;
+  const wifiName = config.observer?.wifiInterface;
+  const eth = ethName ? obs.interfaces?.[ethName] : null;
+  const wifi = wifiName ? obs.interfaces?.[wifiName] : null;
+  if (eth?.router && wifi?.router) {
+    if (!eth.router.ok && wifi.router.ok && failedLinks.size === 0) {
+      out.push({
+        id: 'path:ethernet',
+        severity: 'warning',
+        category: 'service',
+        title: 'Ethernet path from supervisor is faulty',
+        detail: `Router reachable via ${wifiName}, but not via ${ethName}.`
+      });
+    }
+    if (!wifi.router.ok && eth.router.ok) {
+      out.push({
+        id: 'path:wifi',
+        severity: 'warning',
+        category: 'service',
+        title: 'Wi-Fi path from supervisor is faulty',
+        detail: `Router reachable via ${ethName}, but not via ${wifiName}.`
+      });
+    }
+  }
+
+  // Missing Pi Zero witnesses remain visible in obs.witnesses and on the
+  // dashboard, but are deliberately not diagnoses. They are unreliable by
+  // design and may later be used only as corroborating evidence.
+  return out.sort((a, b) => sevRank(b.severity) - sevRank(a.severity) || a.title.localeCompare(b.title));
+}
+
+export class FaultLatch {
+  constructor(failures = 3, recoveries = 2) {
+    this.failures = failures;
+    this.recoveries = recoveries;
+    this.states = new Map();
+  }
+
+  update(raw) {
+    const rawMap = new Map(raw.map(x => [x.id, x]));
+    const keys = new Set([...this.states.keys(), ...rawMap.keys()]);
+    const transitions = [];
+
+    for (const key of keys) {
+      const rec = this.states.get(key) || { present: 0, absent: 0, active: false, item: null };
+      const item = rawMap.get(key);
+      if (item) {
+        rec.present++;
+        rec.absent = 0;
+        rec.item = item;
+        if (!rec.active && rec.present >= this.failures) {
+          rec.active = true;
+          transitions.push({ type: 'started', item });
+        }
+      } else {
+        rec.absent++;
+        rec.present = 0;
+        if (rec.active && rec.absent >= this.recoveries) {
+          rec.active = false;
+          transitions.push({ type: 'cleared', item: rec.item });
+        }
+        if (!rec.active && rec.absent >= this.recoveries) {
+          this.states.delete(key);
+          continue;
+        }
+      }
+      this.states.set(key, rec);
+    }
+
+    return {
+      active: [...this.states.values()].filter(x => x.active).map(x => x.item),
+      transitions
+    };
+  }
+}
