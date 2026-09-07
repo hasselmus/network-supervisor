@@ -6,8 +6,8 @@ Treat Wi-Fi witness Raspberry Pis as unreliable corroborating witnesses: a missi
 Distinguish the most likely root cause from downstream symptoms and coincidences.
 Take account of the observer having independent Ethernet and Wi-Fi paths.
 Do not assume that a router or access point is healthy merely because its management interface answers.
-Return a concise diagnosis with: likely fault location/cause, confidence, evidence for and against, and the least disruptive next action.
-If the evidence does not support a diagnosis, say what additional observation would discriminate between the leading possibilities.`;
+
+Default to a SHORT operational answer, normally 2–4 sentences. If one cause is strongly indicated, state the best diagnosis, confidence, and least disruptive next action; mention only the one or two observations that materially establish it. Do not recite the complete evidence chain, provide separate evidence-for/evidence-against sections, or discuss already-excluded alternatives unless the evidence is genuinely ambiguous. If the evidence is ambiguous, briefly give the leading alternatives and the single most useful discriminating check.`;
 
 export function buildAIEvidence({ config, current, storage, problem }) {
   return {
