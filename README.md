@@ -16,7 +16,7 @@ The TP-Link Easy Smart support is informed by Peter Smode's GPL-3.0 `essstat` ut
 - DNS queries sent directly to the router DNS proxy.
 - Optional Raspberry Pi Zero 2 W Wi-Fi witnesses: BSSID, RSSI, boot ID, uptime and simple reachability.
 - Human observations entered from the LAN web interface.
-- Optional generic AI diagnosis hook. The offline deterministic monitor does not depend on it.
+- Optional AI diagnosis, including direct OpenAI Responses API support. The offline deterministic monitor does not depend on it.
 
 The dashboard has no traffic graphs and stores events/observations rather than long-term packet-volume telemetry.
 
@@ -93,11 +93,36 @@ sudo sh scripts/install-witness.sh
 
 The service exposes `GET /status` on port 8791. The Wi-Fi default gateway is discovered automatically. Site-local overrides live in `/etc/default/network-supervisor-witness`, notably `WITNESS_SUPERVISOR` if you also want each witness to test reachability back to the main supervisor. The witness also sends a DNS query directly to its gateway, so “router answers ping” and “router DNS works” remain distinct observations.
 
-## AI hook
+## AI diagnosis
 
-The web interface can send the current topology, hard switch evidence, functional probes, active diagnoses, recent events and a human-entered problem description to an optional HTTP endpoint configured as `AI_URL`. The endpoint receives JSON and should return either plain text or JSON containing an `answer` field. No AI is required for ordinary monitoring, and AI diagnosis naturally remains unavailable when the relevant network path is down.
+The web interface can send the current topology, hard switch evidence, functional probes, active diagnoses, recent events and an optional human-entered problem description to an AI. This is always an explicit human action: ordinary polling and deterministic diagnosis remain completely local and work without Internet access.
 
-The hook is intentionally vendor-neutral in v0.1. A local model gateway or cloud model adapter can be added without coupling the deterministic monitor to one provider.
+### OpenAI
+
+Direct OpenAI Responses API support is built in. Add the following to the local `.env` file:
+
+```sh
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.6
+OPENAI_REASONING_EFFORT=medium
+```
+
+`OPENAI_MODEL` and `OPENAI_REASONING_EFFORT` are optional; the defaults are `gpt-5.6` and `medium`. Restart the supervisor after changing `.env`, then use **Ask configured AI** in the dashboard. The API key is read only by the server process and is never sent to the browser.
+
+An OpenAI API account/key and API billing are separate from a ChatGPT subscription.
+
+### Generic endpoint
+
+A local model gateway or another cloud service can instead be used with:
+
+```sh
+AI_PROVIDER=generic
+AI_URL=https://example.invalid/diagnose
+AI_BEARER_TOKEN=optional-secret
+```
+
+The generic endpoint receives JSON and may return plain text or JSON containing an `answer` field.
 
 ## Reboots / remediation
 
