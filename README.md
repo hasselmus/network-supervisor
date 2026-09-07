@@ -88,7 +88,7 @@ On each witness Pi, clone the repository and run:
 sudo sh scripts/install-witness.sh
 ```
 
-The service exposes `GET /status` on port 8791. Environment variables `WITNESS_ROUTER`, `WITNESS_SUPERVISOR`, `WITNESS_IFACE`, `WITNESS_INTERNET` and `WITNESS_PORT` may be added to the systemd unit if defaults do not fit.
+The service exposes `GET /status` on port 8791. The Wi-Fi default gateway is discovered automatically. Site-local overrides live in `/etc/default/network-supervisor-witness`, notably `WITNESS_SUPERVISOR` if you also want each witness to test reachability back to the main supervisor. The witness also sends a DNS query directly to its gateway, so “router answers ping” and “router DNS works” remain distinct observations.
 
 ## AI hook
 
