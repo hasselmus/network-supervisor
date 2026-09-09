@@ -56,3 +56,38 @@ test('missing unreliable Wi-Fi witness is not itself a network diagnosis', () =>
   assert.ok(!d.some(x=>x.category==='witness'));
   assert.ok(!d.some(x=>x.id==='witness:pooh'));
 });
+
+test('local Ethernet carrier loss is identified as a physical fault and suppresses vague path fault', () => {
+  const cfg={observer:{ethernetInterface:'eth0',wifiInterface:'wlan0'},switches:[],links:[]};
+  const obs={
+    switches:{}, witnesses:{},
+    interfaces:{
+      eth0:{configured:true,link:{available:true,carrier:false,link:'Link Down'},router:{ok:false},internet:[],dns:{ok:false}},
+      wlan0:{configured:true,link:{available:true,carrier:true,link:'Link Up'},router:{ok:true},internet:[{ok:true,ms:30}],dns:{ok:true}}
+    }
+  };
+  const d=diagnose(cfg,obs);
+  assert.ok(d.some(x=>x.id==='path:ethernet-carrier'&&x.category==='physical'));
+  assert.ok(!d.some(x=>x.id==='path:ethernet'));
+  assert.ok(!d.some(x=>x.id==='router:lan-unreachable'));
+});
+
+test('carrier-up Ethernet failure remains a forwarding/service-path diagnosis', () => {
+  const cfg={observer:{ethernetInterface:'eth0',wifiInterface:'wlan0'},switches:[],links:[]};
+  const obs={switches:{},witnesses:{},interfaces:{
+    eth0:{configured:true,link:{available:true,carrier:true,link:'1000M Full'},router:{ok:false},internet:[],dns:{ok:false}},
+    wlan0:{configured:true,router:{ok:true},internet:[{ok:true,ms:30}],dns:{ok:true}}
+  }};
+  const d=diagnose(cfg,obs);
+  assert.ok(d.some(x=>x.id==='path:ethernet'));
+  assert.ok(!d.some(x=>x.id==='path:ethernet-carrier'));
+});
+
+test('supervisor Ethernet negotiation can be checked without a managed switch', () => {
+  const cfg={observer:{ethernetInterface:'eth0',ethernetExpectedLink:'1000M Full'},switches:[],links:[]};
+  const obs={switches:{},witnesses:{},interfaces:{
+    eth0:{configured:true,link:{available:true,carrier:true,link:'100M Full'},router:{ok:true},internet:[{ok:true,ms:30}],dns:{ok:true}}
+  }};
+  const d=diagnose(cfg,obs);
+  assert.ok(d.some(x=>x.id==='path:ethernet-negotiation'));
+});
