@@ -7,6 +7,7 @@
     "router": "192.168.1.1",
     "dnsServer": "192.168.1.1",
     "ethernetInterface": "eth0",
+    "ethernetExpectedLink": "1000M Full",
     "wifiInterface": "wlan0",
     "internetTargets": ["1.1.1.1", "8.8.8.8"]
   },
