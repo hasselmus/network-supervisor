@@ -2,15 +2,16 @@
 
 A small topology-aware network fault supervisor for fixed home networks.
 
-This is deliberately **not** a bandwidth/NMS dashboard. Its job is to answer: **what physical link, branch or network service is probably broken?** It uses hard evidence from lightly managed Ethernet switches, then functional probes, cellular-router telemetry, then fallible Wi-Fi witnesses. Downstream symptoms are suppressed where a stronger upstream explanation exists.
+This is deliberately **not** a bandwidth/NMS dashboard. Its job is to answer: **what physical link, branch or network service is probably broken?** It uses hard evidence from lightly managed Ethernet switches and from the supervisor host's own Ethernet carrier state, then functional probes, cellular-router telemetry, then fallible Wi-Fi witnesses. Downstream symptoms are suppressed where a stronger upstream explanation exists.
 
 The TP-Link Easy Smart support is informed by Peter Smode's GPL-3.0 `essstat` utility and is therefore kept under GPL-3.0-only as well. Optional TP-Link Archer MR-series telemetry uses the GPL `tplinkrouterc6u` package.
 
 ## What v0.2 monitors
 
-- TP-Link Easy Smart switch management over local HTTP.
-- Per-port carrier state and negotiated speed/duplex.
-- **Change** in bad-packet counters (not merely non-zero lifetime counters).
+- TP-Link Easy Smart switch management over local HTTP when managed switches exist.
+- Per-port carrier state and negotiated speed/duplex on those switches.
+- The supervisor Linux host's own interface carrier/operstate and, where available, Ethernet speed/duplex from sysfs. This remains useful on sites with no managed switches.
+- **Change** in switch bad-packet counters (not merely non-zero lifetime counters).
 - Router reachability through the supervisor Pi's Ethernet and Wi-Fi interfaces separately.
 - External-IP reachability and actual ICMP RTT through both interfaces.
 - DNS queries sent directly to the router DNS proxy.
@@ -29,7 +30,7 @@ The dashboard has no traffic graphs. It stores state changes plus a small rollin
 - `python3-venv` if MR-series cellular telemetry is enabled.
 - `ping` and `iw` installed.
 - `/mnt/ssd` mounted by default for persistent state.
-- TP-Link Easy Smart switches compatible with the classic `logon.cgi` / `PortStatisticsRpm.htm` interface.
+- TP-Link Easy Smart switches compatible with the classic `logon.cgi` / `PortStatisticsRpm.htm` interface, if switch monitoring is used.
 
 The default Easy Smart poller deliberately uses a tiny Python `requests.Session()` helper because this matches the behaviour of `essstat` on real Easy Smart firmware. A pure-Node implementation remains available for development by setting `TPLINK_EASYSMART_BACKEND=node`, but is not the default.
 
@@ -80,6 +81,21 @@ Example:
   "expectedUp": true
 }
 ```
+
+A site may also have no managed switches at all: use `"switches": []` and `"links": []`. The configured `observer.ethernetInterface` is still checked locally for carrier and negotiated speed/duplex. Set an optional expected mode such as:
+
+```json
+"observer": {
+  "router": "192.168.1.1",
+  "dnsServer": "192.168.1.1",
+  "ethernetInterface": "eth0",
+  "ethernetExpectedLink": "1000M Full",
+  "wifiInterface": "wlan0",
+  "internetTargets": ["1.1.1.1", "8.8.8.8"]
+}
+```
+
+If Ethernet carrier is lost while Wi-Fi can still reach the router, the deterministic diagnosis reports the local Ethernet physical link as the fault rather than vaguely labelling the router unavailable. If carrier remains up but only the Ethernet path fails, it is classified separately as a forwarding/IP-path problem.
 
 ### Bad-packet counters
 
@@ -136,7 +152,7 @@ The service exposes `GET /status` on port 8791. The Wi-Fi default gateway is dis
 
 ## AI diagnosis
 
-The web interface can send the current topology, hard switch evidence, functional probes, cellular telemetry, active diagnoses, recent events and an optional human-entered problem description to an AI. This is always an explicit human action: ordinary polling and deterministic diagnosis remain completely local and work without Internet access.
+The web interface can send the current topology, hard switch/interface evidence, functional probes, cellular telemetry, active diagnoses, recent events and an optional human-entered problem description to an AI. This is always an explicit human action: ordinary polling and deterministic diagnosis remain completely local and work without Internet access.
 
 ### OpenAI
 
