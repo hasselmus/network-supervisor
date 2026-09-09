@@ -29,7 +29,7 @@ fi
 # DATA_DIR is site-specific. If it is on /mnt, refuse to silently write to the
 # root filesystem when the intended backing mount is absent. A systemd drop-in
 # also orders the service after whichever filesystem actually contains DATA_DIR.
-DATADIR=$(sed -n 's/^[[:space:]]*DATA_DIR[[:space:]]*=[[:space:]]*//p' "$REPO/.env" | tail -n 1 | sed 's/^["'"']\(.*\)["'"']$/\1/')
+DATADIR=$(sed -n 's/^[[:space:]]*DATA_DIR[[:space:]]*=[[:space:]]*//p' "$REPO/.env" | tail -n 1 | tr -d "\"'")
 [ -n "$DATADIR" ] || DATADIR=/mnt/ssd/network-supervisor
 case "$DATADIR" in
   /mnt/*)
