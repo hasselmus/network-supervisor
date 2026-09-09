@@ -21,3 +21,5 @@ jobs:
         run: pip install -r requirements-router.txt
       - name: Python helper syntax
         run: python3 -m py_compile witness/agent.py src/easysmart_probe.py src/mr600_probe.py
+      - name: Shell syntax
+        run: sh -n scripts/install-systemd.sh scripts/install-witness.sh
