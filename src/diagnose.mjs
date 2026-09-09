@@ -33,8 +33,9 @@ function cellularRadioProblems(spec, cellular) {
 function primaryWanSamples(config, obs) {
   const preferred = config.observer?.ethernetInterface;
   const preferredObs = preferred ? obs.interfaces?.[preferred] : null;
-  const source = preferredObs || Object.values(obs.interfaces || {}).find(Boolean);
-  return source?.internet || [];
+  if (preferredObs && (preferredObs.internet || []).some(x => x?.ok)) return preferredObs.internet || [];
+  const alternate = Object.values(obs.interfaces || {}).find(x => (x?.internet || []).some(y => y?.ok));
+  return alternate?.internet || preferredObs?.internet || [];
 }
 
 export function diagnose(config, obs) {
@@ -128,6 +129,33 @@ export function diagnose(config, obs) {
     }
   }
 
+  const ethName = config.observer?.ethernetInterface;
+  const wifiName = config.observer?.wifiInterface;
+  const eth = ethName ? obs.interfaces?.[ethName] : null;
+  const wifi = wifiName ? obs.interfaces?.[wifiName] : null;
+  const ethCarrierDown = eth?.link?.available && eth.link.carrier === false;
+  const expectedEthLink = config.observer?.ethernetExpectedLink;
+
+  if (ethCarrierDown) {
+    out.push({
+      id: 'path:ethernet-carrier',
+      severity: 'critical',
+      category: 'physical',
+      title: `${ethName}: Ethernet carrier down`,
+      detail: wifi?.router?.ok
+        ? `Linux reports no physical carrier on ${ethName}; the router is still reachable via ${wifiName}. Check the Pi Ethernet cable/plug or the directly connected network device.`
+        : `Linux reports no physical carrier on ${ethName}. Check the Pi Ethernet cable/plug or the directly connected network device.`,
+    });
+  } else if (expectedEthLink && eth?.link?.carrier === true && eth.link.link && eth.link.link !== expectedEthLink) {
+    out.push({
+      id: 'path:ethernet-negotiation',
+      severity: 'warning',
+      category: 'physical',
+      title: `${ethName}: ${eth.link.link}, expected ${expectedEthLink}`,
+      detail: 'The supervisor Pi Ethernet link is up but its locally reported negotiated speed/duplex differs from the site expectation.',
+    });
+  }
+
   const usable = Object.values(obs.interfaces || {}).filter(x => x && x.configured !== false);
   const routerOK = usable.some(x => x.router?.ok);
   const internetOK = usable.some(x => (x.internet || []).some(y => y.ok));
@@ -136,13 +164,13 @@ export function diagnose(config, obs) {
   const cellular = obs.cellular;
   const radioProblems = cellularRadioProblems(cellSpec, cellular);
 
-  if (usable.length && !routerOK && failedLinks.size === 0) {
+  if (usable.length && !routerOK && failedLinks.size === 0 && !ethCarrierDown) {
     out.push({
       id: 'router:lan-unreachable',
       severity: 'critical',
       category: 'service',
       title: 'Router LAN service unreachable',
-      detail: 'The router did not answer through any monitored interface and no managed-switch carrier fault currently explains it.',
+      detail: 'The router did not answer through any monitored interface and no physical carrier fault currently explains it.',
     });
   }
 
@@ -197,7 +225,7 @@ export function diagnose(config, obs) {
   }
 
   // Conservative congestion/path indicator: only flag sustained high latency when
-  // all configured external probes on the primary path are high, RF is plausible,
+  // all configured external probes on a working path are high, RF is plausible,
   // and the router itself is not already moving enough local traffic to make
   // self-induced queueing an obvious explanation.
   if (routerOK && internetOK && cellular?.ok && cellular.telemetry?.registered && radioProblems.length === 0) {
@@ -218,18 +246,14 @@ export function diagnose(config, obs) {
     }
   }
 
-  const ethName = config.observer?.ethernetInterface;
-  const wifiName = config.observer?.wifiInterface;
-  const eth = ethName ? obs.interfaces?.[ethName] : null;
-  const wifi = wifiName ? obs.interfaces?.[wifiName] : null;
   if (eth?.router && wifi?.router) {
-    if (!eth.router.ok && wifi.router.ok && failedLinks.size === 0) {
+    if (!eth.router.ok && wifi.router.ok && failedLinks.size === 0 && !ethCarrierDown) {
       out.push({
         id: 'path:ethernet',
         severity: 'warning',
         category: 'service',
         title: 'Ethernet path from supervisor is faulty',
-        detail: `Router reachable via ${wifiName}, but not via ${ethName}.`,
+        detail: `Ethernet carrier is up, but the router is reachable via ${wifiName} and not via ${ethName}. This points to forwarding/IP-path trouble rather than a pulled cable.`,
       });
     }
     if (!wifi.router.ok && eth.router.ok) {
