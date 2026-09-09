@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readFile } from 'node:fs/promises';
 import dgram from 'node:dgram';
 const execFileP = promisify(execFile);
 
@@ -16,6 +17,43 @@ export async function ping(target, iface = null, timeoutSeconds = 2) {
   } catch (err) {
     return { ok: false, ms: Date.now() - started, error: String(err?.message || err) };
   }
+}
+
+async function readSysfs(path) {
+  try { return (await readFile(path, 'utf8')).trim(); }
+  catch { return null; }
+}
+
+/** Read Linux's local view of an interface's physical/operational link.
+ *
+ * For Ethernet this gives hard local carrier evidence even when there is no
+ * managed switch at the far end. speed/duplex are best-effort: Linux may omit
+ * them or return -1 while the link is down. For Wi-Fi, `iw ... link` remains the
+ * more informative association probe, but operstate/carrier are still useful
+ * context.
+ */
+export async function interfaceLink(iface) {
+  if (!iface) return { available: false };
+  const base = `/sys/class/net/${iface}`;
+  const [carrierRaw, operstate, speedRaw, duplexRaw] = await Promise.all([
+    readSysfs(`${base}/carrier`),
+    readSysfs(`${base}/operstate`),
+    readSysfs(`${base}/speed`),
+    readSysfs(`${base}/duplex`),
+  ]);
+  if ([carrierRaw, operstate, speedRaw, duplexRaw].every(v => v == null)) {
+    return { available: false, error: `interface ${iface} not found in sysfs` };
+  }
+  const carrier = carrierRaw === '1' ? true : carrierRaw === '0' ? false : null;
+  const speedN = Number(speedRaw);
+  const speedMbps = Number.isFinite(speedN) && speedN > 0 ? speedN : null;
+  const duplex = duplexRaw && !/^unknown$/i.test(duplexRaw) ? duplexRaw.toLowerCase() : null;
+  const link = carrier === false
+    ? 'Link Down'
+    : speedMbps && duplex
+      ? `${speedMbps}M ${duplex[0].toUpperCase()}${duplex.slice(1)}`
+      : carrier === true ? 'Link Up' : null;
+  return { available: true, carrier, operstate: operstate || null, speedMbps, duplex, link };
 }
 
 function dnsQueryPacket(name = 'example.com') {
